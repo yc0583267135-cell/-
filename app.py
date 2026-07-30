@@ -1,12 +1,12 @@
 import os
 import tempfile
+import re
 from flask import Flask, request, render_template_string, send_file
 import yt_dlp
 
-# אתחול אפליקציית Flask
 app = Flask(__name__)
 
-# דף הבית - ממשק משתמש ב-HTML בעברית
+# ממשק משתמש ב-HTML בעברית
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
@@ -35,47 +35,52 @@ HTML_TEMPLATE = '''
 </html>
 '''
 
+def clean_youtube_url(url):
+    """פונקציה שמנקה פרמטרים מיותרים מקישור יוטיוב כדי למנוע טעינת טאבים/פלייליסטים"""
+    match = re.search(r'(?:v=|\/)([0-9A-Za-z_-]{11})', url)
+    if match:
+        video_id = match.group(1)
+        return f'https://www.youtube.com/watch?v={video_id}'
+    return url
+
 @app.route('/')
 def home():
-    # נתיב ראשי - הצגת טופס ההורדה למשתמש
     return render_template_string(HTML_TEMPLATE)
 
 @app.route('/download', methods=['POST'])
 def download():
-    # קבלת הקישור שהזין המשתמש בטופס
-    video_url = request.form.get('url')
-    if not video_url:
+    raw_url = request.form.get('url')
+    if not raw_url:
         return "אנא ספק קישור תקין", 400
 
-    # יצירת תיקייה זמנית לשמירת הקובץ בשרת לפני שליחתו
+    # ניקוי הקישור לקבלת הסרטון הספציפי בלבד
+    video_url = clean_youtube_url(raw_url)
     temp_dir = tempfile.mkdtemp()
     
-    # הגדרות מתקדמות עבור yt-dlp לעקיפת חסימות HTTP 403 בשרתי ענן
+    # הגדרות מתקדמות עבור yt-dlp לעקיפת חסימות 403
     ydl_opts = {
         'format': 'best',
         'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
         'quiet': True,
         'nocheckcertificate': True,
         'geo_bypass': True,
-        # הגדרת לקוחות Android ו-Web לעקיפת מגבלות יוטיוב
+        'noplaylist': True,  # מניעת הורדת פלייליסטים או טאבים
+        # שימוש בלקוחות עוקפי חסימה מועדפים
         'extractor_args': {
             'youtube': {
-                'player_client': ['android', 'web'],
+                'player_client': ['ios', 'mweb'],
             }
         },
-        # הגדרת User-Agent של מכשיר נייד
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
         }
     }
 
     try:
-        # ביצוע ההורדה מיוטיוב
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=True)
             filename = ydl.prepare_filename(info)
             
-        # שליחת הקובץ בחזרה לדפדפן של המשתמש
         return send_file(filename, as_attachment=True)
     except Exception as e:
         return f"ארעה שגיאה בזמן ההורדה: {str(e)}", 500
