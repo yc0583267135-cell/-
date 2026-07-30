@@ -37,7 +37,7 @@ HTML_TEMPLATE = '''
 '''
 
 def clean_youtube_url(url):
-    """חילוץ מזהה הסרטון מתוך הקישור"""
+    """פונקציה שמחלצת את מזהה הסרטון מהקישור"""
     match = re.search(r'(?:v=|\/)([0-9A-Za-z_-]{11})', url)
     if match:
         return match.group(1)
@@ -45,6 +45,7 @@ def clean_youtube_url(url):
 
 @app.route('/')
 def home():
+    # הצגת הדף הראשי
     return render_template_string(HTML_TEMPLATE)
 
 @app.route('/download', methods=['POST'])
@@ -60,7 +61,7 @@ def download():
     temp_dir = tempfile.mkdtemp()
     output_path = os.path.join(temp_dir, f"{video_id}.mp4")
 
-    # ניסיון ראשון: הורדה דרך API חיצוני עוקף חסימות (Invidious API)
+    # ניסיון להורדה דרך שרת API עוקף חסימות
     try:
         invidious_instances = [
             'https://invidious.nerdvpn.de',
@@ -74,7 +75,6 @@ def download():
             res = requests.get(api_url, timeout=5)
             if res.status_code == 200:
                 data = res.json()
-                # מציאת הקישור הישיר לקובץ וידאו עם שמע
                 format_url = None
                 for fmt in data.get('formatStreams', []):
                     if fmt.get('container') == 'mp4':
@@ -94,9 +94,9 @@ def download():
             return send_file(output_path, as_attachment=True, download_name=f"video_{video_id}.mp4")
 
     except Exception:
-        pass  # אם ה-API שוחרר/נכשל, נמשיך לגיבוי עם yt-dlp
+        pass  # אם ה-API לא זמין, ממשיכים ל-yt-dlp
 
-    # ניסיון גיבוי: yt-dlp עם לקוח tvhtml5
+    # גיבוי: ניסיון הורדה בעזרת yt-dlp
     ydl_opts = {
         'format': 'b[ext=mp4]/b',
         'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
