@@ -1,6 +1,3 @@
-services:
-  - type: web
-    name: youtube-downloader
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
+flask
+gunicorn
+yt-dlp
