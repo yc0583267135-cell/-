@@ -53,8 +53,6 @@ def download():
         return "אנא ספק קישור תקין", 400
 
     clean_url = clean_youtube_url(raw_url)
-
-    # השרת הרשמי והפעיל של Cobalt API
     cobalt_api = "https://api.cobalt.tools"
 
     headers = {
@@ -76,7 +74,6 @@ def download():
             download_url = data.get("url")
             
             if download_url:
-                # הורדת הקובץ מהשרת והזרמתו למשתמש
                 file_res = requests.get(download_url, stream=True, timeout=60)
                 temp_dir = tempfile.mkdtemp()
                 output_path = os.path.join(temp_dir, "video.mp4")
