@@ -36,24 +36,28 @@ HTML_TEMPLATE = '''
 
 @app.route('/')
 def home():
-    # הצגת ממשק המשתמש
     return render_template_string(HTML_TEMPLATE)
 
 @app.route('/download', methods=['POST'])
 def download():
-    # קבלת הקישור שהזין המשתמש
     video_url = request.form.get('url')
     if not video_url:
         return "אנא ספק קישור תקין", 400
 
-    # יצירת תיקייה זמנית לשמירת הקובץ בשרת
     temp_dir = tempfile.mkdtemp()
     
-    # הגדרות עבור yt-dlp להורדת הסרטון
+    # הגדרות משודרגות למניעת חסימות 403 של יוטיוב
     ydl_opts = {
-        'format': 'best',  # הורדת האיכות הטובה ביותר הזמינה
+        'format': 'best',
         'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
-        'quiet': True
+        'quiet': True,
+        'nocheckcertificate': True,
+        # הגדרת זהות דפדפן רגיל (User-Agent)
+        'http_headers': {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-us,en;q=0.5',
+        }
     }
 
     try:
@@ -61,7 +65,6 @@ def download():
             info = ydl.extract_info(video_url, download=True)
             filename = ydl.prepare_filename(info)
             
-        # שליחת הקובץ בחזרה אל המשתמש
         return send_file(filename, as_attachment=True)
     except Exception as e:
         return f"ארעה שגיאה בזמן ההורדה: {str(e)}", 500
