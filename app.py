@@ -1,6 +1,8 @@
+import os
+import tempfile
 import re
-import requests
-from flask import Flask, request, render_template_string, redirect
+from flask import Flask, request, render_template_string, send_file
+import yt_dlp
 
 app = Flask(__name__)
 
@@ -17,6 +19,7 @@ HTML_TEMPLATE = '''
         input[type="text"] { width: 340px; padding: 10px; margin: 10px; border: 1px solid #ccc; border-radius: 5px; }
         button { padding: 10px 20px; background-color: #ff0000; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; }
         button:hover { background-color: #cc0000; }
+        .status { margin-top: 15px; color: #555; font-size: 14px; }
     </style>
 </head>
 <body>
@@ -27,6 +30,7 @@ HTML_TEMPLATE = '''
             <br>
             <button type="submit">הורד סרטון</button>
         </form>
+        <div class="status">המערכת מעבדת את הקובץ ישירות</div>
     </div>
 </body>
 </html>
@@ -52,35 +56,29 @@ def download():
 
     full_yt_url = f"https://www.youtube.com/watch?v={video_id}"
 
-    # רשימת שרתי API ציבוריים חיצוניים להמרת קישורים בענן
-    api_endpoints = [
-        "https://api.cobalt.tools",
-        "https://co.wuk.sh"
-    ]
+    try:
+        temp_dir = tempfile.mkdtemp()
+        output_path = os.path.join(temp_dir, f"{video_id}.mp4")
 
-    headers = {
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-    }
+        ydl_opts = {
+            'format': 'b[ext=mp4]/best[ext=mp4]/b',
+            'outtmpl': output_path,
+            'quiet': True,
+            'no_warnings': True,
+            'nocheckcertificate': True,
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        }
 
-    payload = {
-        "url": full_yt_url,
-        "videoQuality": "720"
-    }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([full_yt_url])
 
-    for endpoint in api_endpoints:
-        try:
-            response = requests.post(endpoint, json=payload, headers=headers, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                download_url = data.get("url") or data.get("picker", [{}])[0].get("url")
-                if download_url:
-                    return redirect(download_url)
-        except Exception:
-            continue
+        if os.path.exists(output_path):
+            return send_file(output_path, as_attachment=True, download_name=f"video_{video_id}.mp4")
+        else:
+            return "שגיאה: הקובץ לא נוצר בהצלחה.", 500
 
-    return "שגיאה: השרתים החיצוניים חסומים כרגע לגישה מענן. נסה שוב מאוחר יותר.", 500
+    except Exception as e:
+        return f"שגיאה בהורדת הסרטון מהשרת: {str(e)}", 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
