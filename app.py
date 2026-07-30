@@ -54,14 +54,9 @@ def download():
 
     clean_url = clean_youtube_url(raw_url)
 
-    # רשימת שרתי Cobalt API מעודכנים בגרסה החדשה (v10)
-    cobalt_instances = [
-        "https://api.cobalt.tools",
-        "https://cobalt-api.kwiatek.xyz",
-        "https://co.wuk.sh"
-    ]
+    # השרת הרשמי והפעיל של Cobalt API
+    cobalt_api = "https://api.cobalt.tools"
 
-    # הגדרת הכותרות (Headers) הנדרשות ל-API v10 החדש
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/json",
@@ -73,44 +68,34 @@ def download():
         "videoQuality": "720"
     }
 
-    download_url = None
-    last_error = ""
-
-    # ניסיון פנייה לשרתים עד שواحد עובד
-    for instance in cobalt_instances:
-        try:
-            response = requests.post(instance, json=payload, headers=headers, timeout=10)
-            if response.status_code == 200:
-                data = response.json()
-                # בגרסה v10, הקישור נמצא במיקום הזה או במבנה סטרימינג
-                if data.get("status") in ["redirect", "tunnel", "picker"]:
-                    download_url = data.get("url")
-                    if download_url:
-                        break
-            else:
-                last_error = f"סטטוס שרת {response.status_code}"
-        except Exception as e:
-            last_error = str(e)
-            continue
-
-    if not download_url:
-        return f"ארעה שגיאה בעיבוד הסרטון. נסה שוב מאוחר יותר. (פרטים: {last_error})", 500
-
-    # הורדת קובץ הווידאו מהשרת המעבד והזרמתו ללקוח
     try:
-        file_res = requests.get(download_url, stream=True, timeout=60)
-        temp_dir = tempfile.mkdtemp()
-        output_path = os.path.join(temp_dir, "downloaded_video.mp4")
+        response = requests.post(cobalt_api, json=payload, headers=headers, timeout=15)
+        
+        if response.status_code == 200:
+            data = response.json()
+            download_url = data.get("url")
+            
+            if download_url:
+                # הורדת הקובץ מהשרת והזרמתו למשתמש
+                file_res = requests.get(download_url, stream=True, timeout=60)
+                temp_dir = tempfile.mkdtemp()
+                output_path = os.path.join(temp_dir, "video.mp4")
 
-        with open(output_path, 'wb') as f:
-            for chunk in file_res.iter_content(chunk_size=1024 * 1024):
-                if chunk:
-                    f.write(chunk)
+                with open(output_path, 'wb') as f:
+                    for chunk in file_res.iter_content(chunk_size=1024 * 1024):
+                        if chunk:
+                            f.write(chunk)
 
-        return send_file(output_path, as_attachment=True, download_name="video.mp4")
+                return send_file(output_path, as_attachment=True, download_name="video.mp4")
+            else:
+                return "לא ניתן היה לקבל קישור להורדה עבור סרטון זה.", 400
+        else:
+            return f"שגיאה בעבודת השרת המעבד (קוד: {response.status_code})", 500
 
+    except requests.exceptions.RequestException as e:
+        return f"שגיאת תקשורת מול שרת ההורדות: {str(e)}", 500
     except Exception as e:
-        return f"ארעה שגיאה בזמן הורדת הקובץ: {str(e)}", 500
+        return f"ארעה שגיאה בלתי צפויה: {str(e)}", 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
