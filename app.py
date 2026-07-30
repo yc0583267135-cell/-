@@ -36,7 +36,7 @@ HTML_TEMPLATE = '''
 '''
 
 def clean_youtube_url(url):
-    """פונקציה שמנקה פרמטרים מיותרים מקישור יוטיוב כדי למנוע טעינת טאבים/פלייליסטים"""
+    """פונקציה שמנקה פרמטרים מיותרים מקישור יוטיוב"""
     match = re.search(r'(?:v=|\/)([0-9A-Za-z_-]{11})', url)
     if match:
         video_id = match.group(1)
@@ -53,26 +53,25 @@ def download():
     if not raw_url:
         return "אנא ספק קישור תקין", 400
 
-    # ניקוי הקישור לקבלת הסרטון הספציפי בלבד
     video_url = clean_youtube_url(raw_url)
     temp_dir = tempfile.mkdtemp()
     
-    # הגדרות מתקדמות עבור yt-dlp לעקיפת חסימות 403
+    # הגדרות לעקיפת מנגנון עקוף בוטים (Sign in to confirm you're not a bot)
     ydl_opts = {
-        'format': 'best',
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
         'quiet': True,
         'nocheckcertificate': True,
         'geo_bypass': True,
-        'noplaylist': True,  # מניעת הורדת פלייליסטים או טאבים
-        # שימוש בלקוחות עוקפי חסימה מועדפים
+        'noplaylist': True,
+        # שימוש בלקוחות המדמים טלוויזיות/VR לעקיפת אימות הבוטים
         'extractor_args': {
             'youtube': {
-                'player_client': ['ios', 'mweb'],
+                'player_client': ['android_vr', 'tv_embedded', 'ios'],
             }
         },
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
         }
     }
 
