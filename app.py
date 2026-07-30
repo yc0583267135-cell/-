@@ -3,7 +3,6 @@ import tempfile
 import re
 import requests
 from flask import Flask, request, render_template_string, send_file
-import yt_dlp
 
 app = Flask(__name__)
 
@@ -37,15 +36,14 @@ HTML_TEMPLATE = '''
 '''
 
 def clean_youtube_url(url):
-    """פונקציה שמחלצת את מזהה הסרטון מהקישור"""
+    """חילוץ קישור נקי מהקלט"""
     match = re.search(r'(?:v=|\/)([0-9A-Za-z_-]{11})', url)
     if match:
-        return match.group(1)
-    return None
+        return f"https://www.youtube.com/watch?v={match.group(1)}"
+    return url
 
 @app.route('/')
 def home():
-    # הצגת הדף הראשי
     return render_template_string(HTML_TEMPLATE)
 
 @app.route('/download', methods=['POST'])
@@ -54,72 +52,45 @@ def download():
     if not raw_url:
         return "אנא ספק קישור תקין", 400
 
-    video_id = clean_youtube_url(raw_url)
-    if not video_id:
-        return "קישור לא תקין", 400
+    clean_url = clean_youtube_url(raw_url)
 
-    temp_dir = tempfile.mkdtemp()
-    output_path = os.path.join(temp_dir, f"{video_id}.mp4")
-
-    # ניסיון להורדה דרך שרת API עוקף חסימות
-    try:
-        invidious_instances = [
-            'https://invidious.nerdvpn.de',
-            'https://inv.us.projectsegfau.lt',
-            'https://invidious.flokinet.to'
-        ]
-        
-        download_success = False
-        for instance in invidious_instances:
-            api_url = f"{instance}/api/v1/videos/{video_id}"
-            res = requests.get(api_url, timeout=5)
-            if res.status_code == 200:
-                data = res.json()
-                format_url = None
-                for fmt in data.get('formatStreams', []):
-                    if fmt.get('container') == 'mp4':
-                        format_url = fmt.get('url')
-                        break
-                
-                if format_url:
-                    video_res = requests.get(format_url, stream=True, timeout=15)
-                    with open(output_path, 'wb') as f:
-                        for chunk in video_res.iter_content(chunk_size=1024*1024):
-                            if chunk:
-                                f.write(chunk)
-                    download_success = True
-                    break
-                    
-        if download_success and os.path.exists(output_path):
-            return send_file(output_path, as_attachment=True, download_name=f"video_{video_id}.mp4")
-
-    except Exception:
-        pass  # אם ה-API לא זמין, ממשיכים ל-yt-dlp
-
-    # גיבוי: ניסיון הורדה בעזרת yt-dlp
-    ydl_opts = {
-        'format': 'b[ext=mp4]/b',
-        'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
-        'quiet': True,
-        'nocheckcertificate': True,
-        'geo_bypass': True,
-        'noplaylist': True,
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['tvhtml5'],
-            }
-        },
+    # פנייה ל-API החזק של Cobalt שעוקף את כל חסימות הבוטים של יוטיוב
+    cobalt_url = "https://api.cobalt.tools/api/json"
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "url": clean_url,
+        "videoQuality": "720"
     }
 
     try:
-        video_url = f"https://www.youtube.com/watch?v={video_id}"
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(video_url, download=True)
-            filename = ydl.prepare_filename(info)
+        response = requests.post(cobalt_url, json=payload, headers=headers, timeout=15)
+        data = response.json()
+
+        # אם קיבלנו קישור ישיר להורדה או הזרמה
+        if response.status_code == 200 and data.get("url"):
+            file_url = data["url"]
             
-        return send_file(filename, as_attachment=True)
+            # הורדת הקובץ משרתי Cobalt והעברתו למשתמש
+            file_res = requests.get(file_url, stream=True, timeout=60)
+            
+            temp_dir = tempfile.mkdtemp()
+            output_path = os.path.join(temp_dir, "downloaded_video.mp4")
+            
+            with open(output_path, 'wb') as f:
+                for chunk in file_res.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        f.write(chunk)
+                        
+            return send_file(output_path, as_attachment=True, download_name="video.mp4")
+        else:
+            error_msg = data.get("text", "לא ניתן היה לעבד את הסרטון")
+            return f"שגיאה מהשרת: {error_msg}", 400
+
     except Exception as e:
-        return f"ארעה שגיאה בזמן ההורדה: {str(e)}", 500
+        return f"ארעה שגיאה בתקשורת מול השרת: {str(e)}", 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
