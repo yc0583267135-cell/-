@@ -1,6 +1,7 @@
 import os
 import tempfile
 import re
+import requests
 from flask import Flask, request, render_template_string, send_file
 import yt_dlp
 
@@ -36,12 +37,11 @@ HTML_TEMPLATE = '''
 '''
 
 def clean_youtube_url(url):
-    """ניקוי פרמטרים מיותרים מקישור יוטיוב"""
+    """חילוץ מזהה הסרטון מתוך הקישור"""
     match = re.search(r'(?:v=|\/)([0-9A-Za-z_-]{11})', url)
     if match:
-        video_id = match.group(1)
-        return f'https://www.youtube.com/watch?v={video_id}'
-    return url
+        return match.group(1)
+    return None
 
 @app.route('/')
 def home():
@@ -53,26 +53,66 @@ def download():
     if not raw_url:
         return "אנא ספק קישור תקין", 400
 
-    video_url = clean_youtube_url(raw_url)
+    video_id = clean_youtube_url(raw_url)
+    if not video_id:
+        return "קישור לא תקין", 400
+
     temp_dir = tempfile.mkdtemp()
-    
-    # הגדרות לעקיפת חסימות בוטים ללא צורך בקובץ Cookies
+    output_path = os.path.join(temp_dir, f"{video_id}.mp4")
+
+    # ניסיון ראשון: הורדה דרך API חיצוני עוקף חסימות (Invidious API)
+    try:
+        invidious_instances = [
+            'https://invidious.nerdvpn.de',
+            'https://inv.us.projectsegfau.lt',
+            'https://invidious.flokinet.to'
+        ]
+        
+        download_success = False
+        for instance in invidious_instances:
+            api_url = f"{instance}/api/v1/videos/{video_id}"
+            res = requests.get(api_url, timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                # מציאת הקישור הישיר לקובץ וידאו עם שמע
+                format_url = None
+                for fmt in data.get('formatStreams', []):
+                    if fmt.get('container') == 'mp4':
+                        format_url = fmt.get('url')
+                        break
+                
+                if format_url:
+                    video_res = requests.get(format_url, stream=True, timeout=15)
+                    with open(output_path, 'wb') as f:
+                        for chunk in video_res.iter_content(chunk_size=1024*1024):
+                            if chunk:
+                                f.write(chunk)
+                    download_success = True
+                    break
+                    
+        if download_success and os.path.exists(output_path):
+            return send_file(output_path, as_attachment=True, download_name=f"video_{video_id}.mp4")
+
+    except Exception:
+        pass  # אם ה-API שוחרר/נכשל, נמשיך לגיבוי עם yt-dlp
+
+    # ניסיון גיבוי: yt-dlp עם לקוח tvhtml5
     ydl_opts = {
-        'format': 'best[ext=mp4]/best',
+        'format': 'b[ext=mp4]/b',
         'outtmpl': os.path.join(temp_dir, '%(title)s.%(ext)s'),
         'quiet': True,
         'nocheckcertificate': True,
         'geo_bypass': True,
         'noplaylist': True,
-        # שימוש במזהה לקוח פנימי עוקף אימות (tvhtml5 / web_creator)
         'extractor_args': {
             'youtube': {
-                'player_client': ['tvhtml5', 'web_creator'],
+                'player_client': ['tvhtml5'],
             }
         },
     }
 
     try:
+        video_url = f"https://www.youtube.com/watch?v={video_id}"
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=True)
             filename = ydl.prepare_filename(info)
