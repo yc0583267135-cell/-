@@ -1,8 +1,15 @@
 import os
 import tempfile
 import re
+import subprocess
 from flask import Flask, request, render_template_string, send_file
 import yt_dlp
+
+# עדכון אוטומטי של ספריית ההורדות לגרסה הכי מעודכנת בהפעלת השרת
+try:
+    subprocess.run(["pip", "install", "--upgrade", "yt-dlp"], check=False)
+except Exception:
+    pass
 
 app = Flask(__name__)
 
@@ -30,7 +37,7 @@ HTML_TEMPLATE = '''
             <br>
             <button type="submit">הורד סרטון</button>
         </form>
-        <div class="status">המערכת מעבדת את הקובץ ישירות</div>
+        <div class="status">המערכת מעודכנת ומוכנה להורדה</div>
     </div>
 </body>
 </html>
@@ -66,6 +73,7 @@ def download():
             'quiet': True,
             'no_warnings': True,
             'nocheckcertificate': True,
+            'extractor_args': {'youtube': {'player_client': ['android', 'web']}},
             'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         }
 
