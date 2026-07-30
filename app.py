@@ -1,8 +1,7 @@
 import os
-import tempfile
 import re
 import requests
-from flask import Flask, request, render_template_string, send_file
+from flask import Flask, request, render_template_string, redirect
 
 app = Flask(__name__)
 
@@ -36,11 +35,11 @@ HTML_TEMPLATE = '''
 '''
 
 def clean_youtube_url(url):
-    """חילוץ וניקוי הקישור מיוטיוב"""
+    """חילוץ וניקוי מזהה הסרטון מתוך הקישור"""
     match = re.search(r'(?:v=|\/)([0-9A-Za-z_-]{11})', url)
     if match:
         return f"https://www.youtube.com/watch?v={match.group(1)}"
-    return url
+    return url.strip()
 
 @app.route('/')
 def home():
@@ -53,17 +52,20 @@ def download():
         return "אנא ספק קישור תקין", 400
 
     clean_url = clean_youtube_url(raw_url)
+
+    # השרת הרשמי של Cobalt API
     cobalt_api = "https://api.cobalt.tools"
 
     headers = {
         "Accept": "application/json",
-        "Content-Type": "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        "Content-Type": "application/json"
     }
     
+    # מבנה הנתונים המעודכן לפי התקן של API v10
     payload = {
         "url": clean_url,
-        "videoQuality": "720"
+        "videoQuality": "720",
+        "downloadMode": "auto"
     }
 
     try:
@@ -74,20 +76,12 @@ def download():
             download_url = data.get("url")
             
             if download_url:
-                file_res = requests.get(download_url, stream=True, timeout=60)
-                temp_dir = tempfile.mkdtemp()
-                output_path = os.path.join(temp_dir, "video.mp4")
-
-                with open(output_path, 'wb') as f:
-                    for chunk in file_res.iter_content(chunk_size=1024 * 1024):
-                        if chunk:
-                            f.write(chunk)
-
-                return send_file(output_path, as_attachment=True, download_name="video.mp4")
+                # הפניה ישירה של הדפדפן להורדת הקובץ
+                return redirect(download_url)
             else:
-                return "לא ניתן היה לקבל קישור להורדה עבור סרטון זה.", 400
+                return "לא ניתן היה לחלץ קישור להורדה ספציפית זו.", 400
         else:
-            return f"שגיאה בעבודת השרת המעבד (קוד: {response.status_code})", 500
+            return f"שגיאה בעבודת השרת המעבד (קוד: {response.status_code}). ייתכן והסרטון מוגבל.", 500
 
     except requests.exceptions.RequestException as e:
         return f"שגיאת תקשורת מול שרת ההורדות: {str(e)}", 500
